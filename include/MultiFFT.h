@@ -1,14 +1,12 @@
 #pragma once
 
 #include <string>
+#include <vector>
+#include <complex>
+
+using namespace std;
 
 namespace MultiFFT {
-	class MultiFFT {
-	public:
-		MultiFFT();
-		~MultiFFT();
-		void fft();
-	};
-
 	void PrintMessage(const std::string&);
+	vector<complex<double>> Naive1DDFT(const vector<int>&);
 }
