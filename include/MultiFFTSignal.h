@@ -113,7 +113,8 @@ public:
 
 		// Precompute one period of the sine wave
 		int samplesPerPeriod = static_cast<int>(std::round(static_cast<double>(sampleRate) / frequency));
-		sinLookupTable.reserve(samplesPerPeriod);
+		sinLookupTable.resize(samplesPerPeriod);
+
 		for (int i = 0; i < samplesPerPeriod; ++i) {
 			sinLookupTable[i] = (std::sin(i * phaseIncrement));
 		}

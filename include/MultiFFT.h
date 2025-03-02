@@ -14,7 +14,11 @@ namespace MultiFFT {
 
 	FrequencyDomain Naive1DDFT(const Signal<double>& input);
 	FrequencyDomain FirstIttFFT(const Signal<double>& sample);
-	static std::vector<std::complex<double>> FirstITTFFTRC(std::vector<std::complex<double>> sample, int start, int stride, int n);
+	FrequencyDomain SecondIttFFT(const Signal<double>& sample);
+	Signal<double> HannWindowing(const Signal<double>& sample);
+	static std::vector<std::complex<double>> FirstITTFFTRC(std::vector<std::complex<double>> sample, int n);
+	static void SecondITTFFTRC(const std::vector<std::complex<double>>& sample, std::vector<std::complex<double>>& fbins, int start, int stride, int n);
+	int BitReverse(int x, int log2n);
 	void PrintMessage(const std::string&);
 
 }
