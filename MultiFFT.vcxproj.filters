@@ -18,10 +18,13 @@
     <ClInclude Include="include\MultiFFT.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\Signal.h">
+    <ClInclude Include="include\MultiFFTSignal.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\SignalGenerator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\FrequencyDomain.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -32,7 +35,7 @@
     <ClCompile Include="src\SignalGenerator.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\Signal.cpp">
+    <ClCompile Include="src\MultiFFTSignal.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

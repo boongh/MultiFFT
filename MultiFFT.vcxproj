@@ -131,13 +131,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="include\FrequencyDomain.h" />
     <ClInclude Include="include\MultiFFT.h" />
-    <ClInclude Include="include\Signal.h" />
+    <ClInclude Include="include\MultiFFTSignal.h" />
     <ClInclude Include="include\SignalGenerator.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\MultiFFT.cpp" />
-    <ClCompile Include="src\Signal.cpp" />
+    <ClCompile Include="src\MultiFFTSignal.cpp" />
     <ClCompile Include="src\SignalGenerator.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
