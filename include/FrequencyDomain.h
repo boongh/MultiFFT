@@ -6,13 +6,14 @@
 
 class FrequencyDomain {
 public:
+	FrequencyDomain();
+
 	std::vector<std::complex<double>> fbins;
-	double binDifFreq;
-	int startBin;
+	
+	int sampleRate;
 
 	FrequencyDomain(int bins) {
 		fbins = std::vector<std::complex<double>>(bins, 0.0);
-		binDifFreq = 0.0;
-		startBin = 0;
+		sampleRate = 0;
 	}
 };
