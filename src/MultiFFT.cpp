@@ -164,6 +164,8 @@ namespace MultiFFT {
 		}
 	}	
 
+
+
 	/// <summary>
 	/// Interface for FFT
 	/// Third itterationf FFT algorithm
@@ -172,6 +174,7 @@ namespace MultiFFT {
 	/// </summary>
 	/// <param name="sample"></param>
 	/// <returns></returns>
+	/// 
 	FrequencyDomain ThridITTFFT(const Signal<double>& sample) {
 		size_t N = sample.data.size();
 
@@ -184,12 +187,9 @@ namespace MultiFFT {
 		//Reverse bit order of sample into freqdomain
 		for (size_t i = 0; i < N; ++i) {
 			size_t cousin = BitReverse(i, log2n);
-			if (i < cousin) {
-				result.fbins[i] = sample.data[cousin];
-				result.fbins[cousin] = sample.data[i];
-			}
+			result.fbins[i] = sample.data[cousin];
+			result.fbins[cousin] = sample.data[i];
 		}
-
 		ThirdIttFFTRC(result.fbins);
 
 		return result;
@@ -207,6 +207,7 @@ namespace MultiFFT {
 
 		for (size_t n = 2; n < SIZE; n <<= 1) {
 
+			std::cout << "First layer " << n << "\n";
 			double inversen = 0.5 / n;
 			size_t stride = n;
 
@@ -254,7 +255,7 @@ namespace MultiFFT {
 		return static_cast<int>(std::log2(n));
 	}
 
-	constexpr unsigned long long BitReverse(unsigned long long b, unsigned long long head) {
+	inline constexpr unsigned int BitReverse(unsigned int b, unsigned int head) {
 
 		b = (b & 0xFFFF0000) >> 16 | (b & 0x0000FFFF) << 16;
 		b = (b & 0xFF00FF00) >> 8 | (b & 0x00FF00FF) << 8;
@@ -262,7 +263,7 @@ namespace MultiFFT {
 		b = (b & 0xCCCCCCCC) >> 2 | (b & 0x33333333) << 2;
 		b = (b & 0xAAAAAAAA) >> 1 | (b & 0x55555555) << 1;
 
-		b >>= (sizeof(unsigned long long ) * 8 - head);
+		b >>= (sizeof(unsigned int) * 8 - head);
 		return b;
 	}
 
