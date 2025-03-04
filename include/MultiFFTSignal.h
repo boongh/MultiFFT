@@ -24,20 +24,20 @@ public:
 		this->data = std::vector<T>();
 	}
 
-	Signal(const std::vector<T>& data, int sampleRate, int channel) {
+	Signal(const std::vector<T>& data, size_t sampleRate, size_t channel) {
 		this->data = data;
 		this->sampleRate = sampleRate;
 		this->channel = channel;
 	}
-	Signal(int size, int sampleRate, int channel) {
+	Signal(size_t size, size_t sampleRate, size_t channel) {
 		this->sampleRate = sampleRate;
 		this->data = std::vector<T>(size * channel);
 		this->channel = channel;
 	}
 
 
-	int sampleRate;
-	int channel;
+	size_t sampleRate;
+	size_t channel;
 	std::vector<T>data;
 
 
@@ -70,6 +70,9 @@ public:
 	//Combining signal a and b with b shifted forward in time by timeShift seconds
 	//If samepleRate is not the same, the signal with the higher sample rate will be used
 	static Signal<T> CombineSignal(const Signal& base, const Signal& b, double timeShift, double factor) {
+		if (base.sampleRate != b.sampleRate) {
+			throw std::invalid_argument("Sample rate not coherent");
+		}
 
 		int sampleratemax = std::max(base.sampleRate, b.sampleRate);
 		int maxChannel = std::max(base.channel, b.channel);
@@ -79,34 +82,22 @@ public:
 
 		int timeshiftSR = sampleratemax * timeShift;
 
-		int baseSize = base.data.size() * sampleratemax / base.sampleRate;
-		int bSize = b.data.size() * sampleratemax / b.sampleRate + sampleratemax * timeShift;
+		size_t baseSize = base.data.size() * sampleratemax / base.sampleRate;
+		size_t bSize = b.data.size() * sampleratemax / b.sampleRate + sampleratemax * timeShift;
 
 		Signal<T> result = Signal<T>(std::max(baseSize, bSize), sampleratemax, maxChannel);
 
 		
+		std::size_t shift = (static_cast<size_t>(result.sampleRate) / b.sampleRate);
 
-		// Start with adding in base signal at the start
-		// Adjust the interval of sample in data to be the same as the sample rate
-
-		// Increment adjust for sample rate difference
-		int shift = (static_cast<double>(result.sampleRate) / base.sampleRate);
-
-		for (int i = 0; i < base.data.size(); i++) {
-			result.data[i * shift] += base.data[i] * (1 - factor);
-		}
-
-		// Calculate shift for signal b;
-		shift = (static_cast<double>(result.sampleRate) / b.sampleRate);
-
-		for (int i = 0; i < b.data.size(); i++) {
+		for (size_t i = 0; i < b.data.size(); i++) {
 			result.data[i * shift + timeshiftSR] += b.data[i] * factor;
 		}
 
 		return result;
 	}
 
-	static Signal<T> GenerateSineWave(int size, int frequency, int sampleRate, double amplitudeNormalized = 1) {
+	static Signal<T> GenerateSineWave(size_t size, int frequency, int sampleRate, double amplitudeNormalized = 1) {
 
 		std::vector<double> sinLookupTable;
 		const double phaseIncrement = 2.0 * PI * frequency / sampleRate;
@@ -115,12 +106,8 @@ public:
 		int samplesPerPeriod = static_cast<int>(std::round(static_cast<double>(sampleRate) / frequency));
 		sinLookupTable.resize(samplesPerPeriod);
 
-		for (int i = 0; i < samplesPerPeriod; ++i) {
-			sinLookupTable[i] = (std::sin(i * phaseIncrement));
-		}
-
 		Signal<double> result = Signal<double>(size, sampleRate, 1);
-		for (int i = 0; i < size; i++) {
+		for (size_t i = 0; i < size; i++) {
 			result.data[i] = amplitudeNormalized * sin(2 * PI * frequency * i / (double)sampleRate);
 		}
 		return (result.data.empty()) ? Signal<T>() : result;

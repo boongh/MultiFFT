@@ -14,14 +14,10 @@ namespace MultiFFT {
 	}
 
 	FrequencyDomain Naive1DDFT(const Signal<double>& input) {
-		int N = input.data.size();
-		int halfN = N / 2;
+		size_t N = input.data.size();
+		size_t halfN = N / 2;
 		double inverseN = 1.0 / N;
-		int samplerate = input.sampleRate;
-		int maxF = samplerate / 2;
-		int minBin = N / static_cast<double>(samplerate);
-		double frequencyResolution = 1.0 / minBin;
-		int maxBin = maxF / frequencyResolution;
+		size_t samplerate = input.sampleRate;
 
 		FrequencyDomain result(N);
 
@@ -30,16 +26,10 @@ namespace MultiFFT {
 		int hundredThousand = 1000;
 		int counter = 0;
 
-		for (int i = 0; i < N; ++i) {
+		for (size_t i = 0; i < N; ++i) {
 			std::complex<double> angle = -IUNIT * (2.0 * PI * i * inverseN);
-			for (int k = 0; k < N; ++k) {
+			for (size_t k = 0; k < N; ++k) {
 				result.fbins[i] += input.data[k] * exp(angle * (double)k) / static_cast<double>(halfN);
-			}
-
-			if (counter++ == hundredThousand) {
-				std::cout << result.fbins[i] << "\n";
-				std::cout << i << " bin" << "\n";
-				counter = 0;
 			}
 		}
 
@@ -50,15 +40,23 @@ namespace MultiFFT {
 		return result;
 	}
 
+
+	/// <summary>
+	/// First itteration of the FFT implementation
+	/// Sample has to be power of 2
+	/// Very big memory overhead
+	/// </summary>
+	/// <param name="sample"></param>
+	/// <returns></returns>
 	FrequencyDomain FirstIttFFT(const Signal<double>& sample) {
-		int N = sample.data.size();
-		int halfN = N / 2;
-		double inverseN = 1.0 / N;
-		int samplerate = sample.sampleRate;
-		int maxF = samplerate / 2;
-		int minBin = N / static_cast<double>(samplerate);
-		double frequencyResolution = 1.0 / minBin;
-		int maxBin = maxF / frequencyResolution;
+		size_t N = static_cast<unsigned long long>(sample.data.size());
+
+		if (!IsPowerOfTwo(N) && N != 1) {
+			throw std::invalid_argument("n not power of 2 FFT");
+		}
+
+		size_t halfN = N / 2;
+		size_t samplerate = sample.sampleRate;
 
 		FrequencyDomain result(N);
 
@@ -66,7 +64,7 @@ namespace MultiFFT {
 
 		std::vector<std::complex<double>> conversionToComplex(N);
 
-		for (int i = 0; i < N; i++) {
+		for (size_t i = 0; i < N; i++) {
 			conversionToComplex[i] = std::complex<double>(sample.data[i], 0.0);
 		};
 
@@ -79,11 +77,14 @@ namespace MultiFFT {
 		return result;
 	}
 
-	static std::vector<std::complex<double>> FirstITTFFTRC(std::vector<std::complex<double>> sample, int n) {
 
-		if (!IsPowerOfTwo(n) && n != 1){
-			std::invalid_argument("n not power of 2 FFT");
-		}
+	/// <summary>
+	/// Internal helper function for the first itteration of FFT
+	/// </summary>
+	/// <param name="sample"></param>
+	/// <param name="n"></param>
+	/// <returns></returns>
+	static std::vector<std::complex<double>> FirstITTFFTRC(std::vector<std::complex<double>> sample, int n) {
 
 		if (n == 1) { return sample; }
 			
@@ -111,15 +112,16 @@ namespace MultiFFT {
 		return freqBin;
 	}
 
+
 	FrequencyDomain SecondIttFFT(const Signal<double>& sample) {
 		int N = sample.data.size();
+
+		if (!IsPowerOfTwo(N) && N != 1) {
+			throw std::invalid_argument("n not power of 2 FFT");
+		}
+
 		int halfN = N / 2;
-		double inverseN = 1.0 / N;
 		int samplerate = sample.sampleRate;
-		int maxF = samplerate / 2;
-		int minBin = N / static_cast<double>(samplerate);
-		double frequencyResolution = 1.0 / minBin;
-		int maxBin = maxF / frequencyResolution;
 
 		FrequencyDomain result(N);
 
@@ -142,10 +144,6 @@ namespace MultiFFT {
 
 	static void SecondITTFFTRC(const std::vector<std::complex<double>>& sample, std::vector<std::complex<double>>& fbins,  int start, int stride, int n) {
 
-		if (!IsPowerOfTwo(n) && n != 1) {
-			std::invalid_argument("n not power of 2 FFT");
-		}
-
 		if (n == 1) {
 			fbins[0] = sample[start];
 			return;
@@ -166,32 +164,33 @@ namespace MultiFFT {
 		}
 	}	
 
-
+	/// <summary>
+	/// Interface for FFT
+	/// Third itterationf FFT algorithm
+	/// Bit reversal permutation + one allocation
+	/// No recursion, NASA likes :)
+	/// </summary>
+	/// <param name="sample"></param>
+	/// <returns></returns>
 	FrequencyDomain ThridITTFFT(const Signal<double>& sample) {
-		int N = sample.data.size();
+		size_t N = sample.data.size();
 
 		if (!IsPowerOfTwo(N)) throw std::invalid_argument("Size is not a power of 2");
 	
-		int log2n = log2(N);
+		size_t log2n = static_cast<size_t>(log2(N));
 
-		double temp1;
-		double temp2;
 		FrequencyDomain result(N);
 
 		//Reverse bit order of sample into freqdomain
-		for (int i = 0; i < N; ++i) {
-			int cousin = BitReverse(i, log2n);
+		for (size_t i = 0; i < N; ++i) {
+			size_t cousin = BitReverse(i, log2n);
 			if (i < cousin) {
 				result.fbins[i] = sample.data[cousin];
 				result.fbins[cousin] = sample.data[i];
 			}
 		}
 
-
-		//Generate FT
-		for (unsigned int n = 2; n < N; n <<= 1) {
-			ThirdIttFFTRC(result.fbins, N, n);
-		}
+		ThirdIttFFTRC(result.fbins);
 
 		return result;
 	}
@@ -203,24 +202,33 @@ namespace MultiFFT {
 	/// <param name="fbins"></param>
 	/// <param name="n"></param>
 	/// <param name="stride"></param>
-	static void ThirdIttFFTRC(std::vector<std::complex<double>>& fbins, const unsigned int SIZE, unsigned int n) {
-		double inversen = 1.0 / (2.0 * n);
-		unsigned int stride = n;
-		int N = fbins.size();
+	static void ThirdIttFFTRC(std::vector<std::complex<double>>& fbins) {
+		size_t SIZE = fbins.size();
 
-		for (int k = 0; k < SIZE; k += 2 * n) {
-			for (int j = 0; j < stride; j++) {
-				std::complex<double> W = std::polar(1.0, -2.0 * PI * j * inversen);
+		for (size_t n = 2; n < SIZE; n <<= 1) {
 
-				unsigned int evenIndex = k + j;
-				unsigned int oddIndex = k + j + stride;
+			double inversen = 0.5 / n;
+			size_t stride = n;
 
-				std::complex<double> odd = fbins[oddIndex];
-				std::complex<double> even = fbins[evenIndex];
+			for (size_t k = 0; k < SIZE; k += 2 * n) { //Completes every butterfly loop
+
+				for (size_t j = 0; j < stride; j++) { //Completes each butterfly
+
+					size_t evenIndex = k + j;
+					size_t oddIndex = k + j + stride;
+
+					std::complex<double> odd = fbins[oddIndex];
+					std::complex<double> even = fbins[evenIndex];
 
 
-				fbins[k + j] = even + W * odd;
-				fbins[k + j + stride] = even - W * odd;
+					//std::complex<double> W = std::polar(1.0, -2.0 * PI * j * inversen);
+					//std::complex<double> odd = fbins[oddIndex];
+
+					std::complex<double> W = std::polar(1.0, -2.0 * PI * j * inversen) * odd;
+
+					fbins[k + j] = even + W;
+					fbins[k + j + stride] = even - W;
+				}
 			}
 		}
 	}
@@ -242,7 +250,11 @@ namespace MultiFFT {
 		return result;
 	}
 
-	constexpr unsigned int BitReverse(unsigned int b, unsigned int head) {
+	unsigned int RoundDownPowerOfTwo(unsigned int n) {
+		return static_cast<int>(std::log2(n));
+	}
+
+	constexpr unsigned long long BitReverse(unsigned long long b, unsigned long long head) {
 
 		b = (b & 0xFFFF0000) >> 16 | (b & 0x0000FFFF) << 16;
 		b = (b & 0xFF00FF00) >> 8 | (b & 0x00FF00FF) << 8;
@@ -250,13 +262,13 @@ namespace MultiFFT {
 		b = (b & 0xCCCCCCCC) >> 2 | (b & 0x33333333) << 2;
 		b = (b & 0xAAAAAAAA) >> 1 | (b & 0x55555555) << 1;
 
-		b >>= (sizeof(unsigned int) * 8 - head);
+		b >>= (sizeof(unsigned long long ) * 8 - head);
 		return b;
 	}
 
 
 	Signal<double> HannWindowing(const Signal<double>& sample) {
-		int N = sample.data.size();
+		unsigned long long N = static_cast<unsigned long long>(sample.data.size());
 		Signal<double> windowedSignal(N, sample.sampleRate, sample.channel);
 
 		for (int i = 0; i < N; ++i) {

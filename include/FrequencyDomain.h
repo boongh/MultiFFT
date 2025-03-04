@@ -10,9 +10,9 @@ public:
 
 	std::vector<std::complex<double>> fbins;
 	
-	int sampleRate;
+	size_t sampleRate;
 
-	FrequencyDomain(int bins) {
+	FrequencyDomain(size_t bins) {
 		fbins = std::vector<std::complex<double>>(bins, 0.0);
 		sampleRate = 0;
 	}
