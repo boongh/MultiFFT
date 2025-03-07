@@ -4,7 +4,7 @@
 #include <complex>
 
 
-class FrequencyDomain {
+struct FrequencyDomain {
 public:
 	FrequencyDomain();
 

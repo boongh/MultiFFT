@@ -8,11 +8,6 @@
 
 namespace MultiFFT {
 
-	void PrintMessage(const std::string& str)
-	{
-		std::cout << str << std::endl;
-	}
-
 	FrequencyDomain Naive1DDFT(const Signal<double>& input) {
 		size_t N = input.data.size();
 		size_t halfN = N / 2;
@@ -206,8 +201,6 @@ namespace MultiFFT {
 		size_t SIZE = fbins.size();
 
 		for (size_t n = 2; n < SIZE; n <<= 1) {
-
-			std::cout << "First layer " << n << "\n";
 			double inversen = 0.5 / n;
 			size_t stride = n;
 
@@ -229,6 +222,92 @@ namespace MultiFFT {
 
 					fbins[k + j] = even + W;
 					fbins[k + j + stride] = even - W;
+				}
+			}
+		}
+	}
+
+
+
+
+	/// <summary>
+	/// Interface for FFT
+	/// Third itterationf FFT algorithm
+	/// Bit reversal permutation + one allocation
+	/// No recursion, NASA likes :)
+	/// </summary>
+	/// <param name="sample"></param>
+	/// <returns></returns>
+	/// 
+	FrequencyDomain FourthIttFTT(const Signal<double>& sample) {
+		int N = sample.data.size();
+
+		if (!IsPowerOfTwo(N)) throw std::invalid_argument("Size is not a power of 2");
+
+		unsigned int log2n = log2(N);
+
+		FrequencyDomain result(N);
+
+		//Reverse bit order of sample into freqdomain
+		for (size_t i = 0; i < N; ++i) {
+			size_t cousin = BitReverse(i, log2n);
+			if (i > cousin) {
+				result.fbins[cousin] = sample.data[i];
+				result.fbins[i] = sample.data[cousin];
+			}
+		}
+
+		FourthITTFTTInternal(result.fbins);
+
+		return result;
+	}
+
+	/// <summary>
+	/// Generate FFT/ Sub ffts
+	/// </summary>
+	/// <param name="sample">The bit reversed sample</param>
+	/// <param name="fbins"></param>
+	/// <param name="n"></param>
+	/// <param name="stride"></param>
+	static void FourthITTFTTInternal(std::vector<std::complex<double>>& fbins) {
+
+		size_t SIZE = fbins.size();
+        std::vector<std::complex<double>> precomputes(SIZE);
+
+		std::complex<double> odd;
+		std::complex<double> even;
+
+		std::complex<double> W;
+
+		size_t evenIndex;
+		size_t oddIndex;
+
+		double inversen;
+		size_t stride;
+
+		for (size_t n = 2; n < SIZE; n <<= 1) {
+			inversen = 0.5 / n;
+			stride = n;
+
+			//Precomputes W
+			for (unsigned int wp = 0; wp < n; ++wp) {
+				precomputes[wp] = std::polar(1.0, -2.0 * PI * wp * inversen);
+			}
+
+			for (size_t k = 0; k < SIZE; k += 2 * n) { //Completes every butterfly loop
+
+				for (size_t j = 0; j < stride; j++) { //Completes each butterfly
+
+					evenIndex = k + j;
+					oddIndex = k + j + stride;
+
+					odd = fbins[oddIndex];
+					even = fbins[evenIndex];
+
+					W = precomputes[j] * odd;
+
+					fbins[evenIndex] = even + W;
+					fbins[oddIndex] = even - W;
 				}
 			}
 		}
@@ -279,6 +358,8 @@ namespace MultiFFT {
 		return windowedSignal;
 	}
 
+
+
 	bool IsPowerOfTwo(int x)
 	{
 		return (x != 0) && ((x & (x - 1)) == 0);
@@ -292,5 +373,10 @@ namespace MultiFFT {
 	bool IsPowerOfTwo(unsigned long x)
 	{
 		return (x != 0) && ((x & (x - 1)) == 0);
+	}
+
+	void PrintMessage(const std::string& str)
+	{
+		std::cout << str << std::endl;
 	}
 }

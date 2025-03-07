@@ -19,9 +19,11 @@ namespace MultiFFT {
 	static std::vector<std::complex<double>> FirstITTFFTRC(std::vector<std::complex<double>> sample, int n);
 	static void SecondITTFFTRC(const std::vector<std::complex<double>>& sample, std::vector<std::complex<double>>& fbins, int start, int stride, int n);
 	void ThirdIttFFTRC(std::vector<std::complex<double>>& fbins);
+	FrequencyDomain FourthIttFTT(const Signal<double>& sample);
+	static void FourthITTFTTInternal(std::vector<std::complex<double>>& fbins);
 	std::vector<std::complex<double>> ConvertSignalToComplex(const std::vector<double>& input);
 	unsigned int RoundDownPowerOfTwo(unsigned int n);
-	constexpr unsigned int BitReverse(unsigned int b, unsigned int head);
+	inline constexpr unsigned int BitReverse(unsigned int b, unsigned int head);
 	Signal<double> HannWindowing(const Signal<double>& sample);
 	void PrintMessage(const std::string&);
 	bool IsPowerOfTwo(int x);
