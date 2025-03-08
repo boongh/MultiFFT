@@ -90,6 +90,10 @@ public:
 		
 		std::size_t shift = (static_cast<size_t>(result.sampleRate) / b.sampleRate);
 
+		for (size_t i = 0; i < base.data.size(); i++) {
+			result.data[i] += base.data[i] * (1 - factor);
+		}
+
 		for (size_t i = 0; i < b.data.size(); i++) {
 			result.data[i * shift + timeshiftSR] += b.data[i] * factor;
 		}
@@ -122,7 +126,7 @@ public:
 		return (dataOut.data.empty()) ? Signal<T>() : dataOut;
 	}
 
-	static Signal<uint16_t> ConvertSignalToPCM(Signal<T> signalIn) {
+	static Signal<uint16_t> ConvertSignalToPCM(const Signal<T>& signalIn) {
 
 		Signal<uint16_t> dataOut = Signal<uint16_t>(static_cast<int>(signalIn.data.size()), signalIn.sampleRate, signalIn.channel);
 

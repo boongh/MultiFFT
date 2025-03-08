@@ -3,7 +3,7 @@
 #include <math.h>
 #include <vector>
 #include <complex>
-#include <math.h>
+#include <chrono>
 #include <immintrin.h>
 #include "FrequencyDomain.h"
 
@@ -383,7 +383,7 @@ namespace MultiFFT {
 	static void FifthFFTInternal(std::vector<std::complex<double>>& fbins) {
 
 		size_t SIZE = fbins.size();
-		std::vector<std::complex<double>> precomputes(SIZE);
+		alignas(32) std::vector<std::complex<double>> precomputes(SIZE);
 
 		std::complex<double> odd;
 		std::complex<double> even;
@@ -402,13 +402,9 @@ namespace MultiFFT {
 		__m256d wVector;
 		__m256d oddVectorTimeW;
 		__m256d rout;
-		__m256d swappedW;
 		__m256d switchcrossProduct;
-		__m256d doubleSwitchCrossProduct;
 		__m256d iout;
 		__m256d TwiddleFactor;
-		__m256d PlusW;
-		__m256d MinusW;
 
 		//First butterfly separate, second up can SIMD
 
@@ -433,11 +429,8 @@ namespace MultiFFT {
 				inversen = 0.5 / n;
 
 				//Precomputes W
-				for (unsigned int wp = 0; wp < n; wp+=2) {
-					double cosfactor= -2.0 * PI * inversen;
-					double n[] = { wp * cosfactor, wp * cosfactor - 0.5 * PI, (wp + 1) * cosfactor, (wp + 1) * cosfactor - 0.5 * PI };
-					__m256d w = _mm256_load_pd(&n[0]);
-					_mm256_store_pd(reinterpret_cast<double*>(&precomputes[wp]), _mm256_cos_pd(w));
+				for (unsigned int wp = 0; wp < n; ++wp) {
+					precomputes[wp] = std::polar(1.0, -2.0 * PI * wp * inversen);
 				}
 
 				for (size_t k = 0; k < SIZE; k += 2 * n) { //Completes every butterfly loop
@@ -446,14 +439,7 @@ namespace MultiFFT {
 
 						evenIndex = k + j;
 						oddIndex = k + j + n;
-						
-						//odd = fbins[oddIndex];
-						//even = fbins[evenIndex];
-						//
-						//W = precomputes[j] * odd;
-						//
-						//fbins[evenIndex] = even + W;
-						//fbins[oddIndex] = even - W;
+					
 
 						oddVector = _mm256_load_pd(reinterpret_cast<double*>(&fbins[oddIndex]));
 						evenVector = _mm256_load_pd(reinterpret_cast<double*>(&fbins[evenIndex]));
@@ -465,19 +451,13 @@ namespace MultiFFT {
 						rout = _mm256_sub_pd(oddVectorTimeW, _mm256_permute_pd(oddVectorTimeW, 0b0101));
 						
 						//Imaginary part
-						swappedW = _mm256_permute_pd(wVector, 0b0101);
-						switchcrossProduct = _mm256_mul_pd(oddVector, swappedW);
-						doubleSwitchCrossProduct = _mm256_permute_pd(switchcrossProduct, 0b0101);
-						iout = _mm256_add_pd(switchcrossProduct, doubleSwitchCrossProduct);
+						switchcrossProduct = _mm256_mul_pd(oddVector, _mm256_permute_pd(wVector, 0b0101));
+						iout = _mm256_add_pd(switchcrossProduct, _mm256_permute_pd(switchcrossProduct, 0b0101));
 						
 						TwiddleFactor = _mm256_blend_pd(rout, iout, 0b1010);
 						
-						
-						PlusW = _mm256_add_pd(evenVector, TwiddleFactor);
-						MinusW = _mm256_sub_pd(evenVector, TwiddleFactor);
-						
-						_mm256_store_pd(reinterpret_cast<double*>(&fbins[evenIndex]), PlusW);
-						_mm256_store_pd(reinterpret_cast<double*>(&fbins[oddIndex]), MinusW);
+						_mm256_store_pd(reinterpret_cast<double*>(&fbins[evenIndex]), _mm256_add_pd(evenVector, TwiddleFactor));
+						_mm256_store_pd(reinterpret_cast<double*>(&fbins[oddIndex]), _mm256_sub_pd(evenVector, TwiddleFactor));
 					}
 				}
 			}
