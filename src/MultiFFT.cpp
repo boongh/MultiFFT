@@ -4,6 +4,7 @@
 #include <vector>
 #include <complex>
 #include <math.h>
+#include <immintrin.h>
 #include "FrequencyDomain.h"
 
 namespace MultiFFT {
@@ -285,33 +286,204 @@ namespace MultiFFT {
 		double inversen;
 		size_t stride;
 
-		for (size_t n = 2; n < SIZE; n <<= 1) {
-			inversen = 0.5 / n;
-			stride = n;
 
-			//Precomputes W
-			for (unsigned int wp = 0; wp < n; ++wp) {
-				precomputes[wp] = std::polar(1.0, -2.0 * PI * wp * inversen);
+		//First butterfly separate, second up can SIMD
+
+		inversen = 0.5 / 2;
+		stride = 2;
+		for (size_t k = 0; k < SIZE; k += 4) { //Completes every butterfly loop
+
+			for (size_t j = 0; j < stride; j++) { //Completes each butterfly
+
+				evenIndex = k + j;
+				oddIndex = k + j + stride;
+
+				odd = fbins[oddIndex];
+
+				fbins[evenIndex] = fbins[evenIndex] + odd;
+				fbins[oddIndex] = fbins[evenIndex] - odd;
 			}
+		}
 
-			for (size_t k = 0; k < SIZE; k += 2 * n) { //Completes every butterfly loop
+		if (SIZE > 2) {
 
-				for (size_t j = 0; j < stride; j++) { //Completes each butterfly
+			for (size_t n = 4; n < SIZE; n <<= 1) {
+				inversen = 0.5 / n;
+				stride = n;
 
-					evenIndex = k + j;
-					oddIndex = k + j + stride;
+				//Precomputes W
+				for (unsigned int wp = 0; wp < n; ++wp) {
+					precomputes[wp] = std::polar(1.0, -2.0 * PI * wp * inversen);
+				}
 
-					odd = fbins[oddIndex];
-					even = fbins[evenIndex];
+				for (size_t k = 0; k < SIZE; k += 2 * n) { //Completes every butterfly loop
 
-					W = precomputes[j] * odd;
+					for (size_t j = 0; j < stride; j++) { //Completes each butterfly
 
-					fbins[evenIndex] = even + W;
-					fbins[oddIndex] = even - W;
+						evenIndex = k + j;
+						oddIndex = k + j + stride;
+
+						odd = fbins[oddIndex];
+						even = fbins[evenIndex];
+
+						W = precomputes[j] * odd;
+
+						fbins[evenIndex] = even + W;
+						fbins[oddIndex] = even - W;
+					}
 				}
 			}
 		}
 	}
+
+
+
+
+	/// <summary>
+	/// Interface for FFT
+	/// Fifth itterationf FFT algorithm
+	/// Bit reversal permutation + one allocation
+	/// No recursion, NASA likes :)
+	/// Vectorize
+	/// Precompute
+	/// </summary>
+	/// <param name="sample"></param>
+	/// <returns></returns>
+	/// 
+	FrequencyDomain FifthIttFFT(const Signal<double>& sample) {
+		int N = sample.data.size();
+
+		if (!IsPowerOfTwo(N)) throw std::invalid_argument("Size is not a power of 2");
+
+		unsigned int log2n = log2(N);
+
+		FrequencyDomain result(N);
+
+		//Reverse bit order of sample into freqdomain
+		for (size_t i = 0; i < N; ++i) {
+			size_t cousin = BitReverse(i, log2n);
+			if (i > cousin) {
+				result.fbins[cousin] = sample.data[i];
+				result.fbins[i] = sample.data[cousin];
+			}
+		}
+
+		FifthFFTInternal(result.fbins);
+
+		return result;
+	}
+
+	/// <summary>
+	/// Generate FFT/ Sub ffts
+	/// </summary>
+	/// <param name="sample">The bit reversed sample</param>
+	/// <param name="fbins"></param>
+	/// <param name="n"></param>
+	/// <param name="stride"></param>
+	static void FifthFFTInternal(std::vector<std::complex<double>>& fbins) {
+
+		size_t SIZE = fbins.size();
+		std::vector<std::complex<double>> precomputes(SIZE);
+
+		std::complex<double> odd;
+		std::complex<double> even;
+
+		std::complex<double> W;
+
+		size_t evenIndex;
+		size_t oddIndex;
+
+		double inversen;
+		size_t stride;
+
+		//SIMD stuff prep
+		__m256d oddVector;
+		__m256d evenVector;
+		__m256d wVector;
+		__m256d oddVectorTimeW;
+		__m256d rout;
+		__m256d swappedW;
+		__m256d switchcrossProduct;
+		__m256d doubleSwitchCrossProduct;
+		__m256d iout;
+		__m256d TwiddleFactor;
+		__m256d PlusW;
+		__m256d MinusW;
+
+		//First butterfly separate, second up can SIMD
+
+		inversen = 0.5 / 2;
+		stride = 2;
+		for (size_t k = 0; k < SIZE; k += 4) { //Completes every butterfly loop
+
+			for (size_t j = 0; j < stride; j++) { //Completes each butterfly
+
+				evenIndex = k + j;
+				oddIndex = k + j + stride;
+
+				odd = fbins[oddIndex];
+
+				fbins[evenIndex] = fbins[evenIndex] + odd;
+				fbins[oddIndex] = fbins[evenIndex] - odd;
+			}
+		}
+
+		if (SIZE >= 2) {
+			for (size_t n = 4; n < SIZE; n <<= 1) {
+				inversen = 0.5 / n;
+
+				//Precomputes W
+				for (unsigned int wp = 0; wp < n; wp+=2) {
+					double cosfactor= -2.0 * PI * inversen;
+					double n[] = { wp * cosfactor, wp * cosfactor - 0.5 * PI, (wp + 1) * cosfactor, (wp + 1) * cosfactor - 0.5 * PI };
+					__m256d w = _mm256_load_pd(&n[0]);
+					_mm256_store_pd(reinterpret_cast<double*>(&precomputes[wp]), _mm256_cos_pd(w));
+				}
+
+				for (size_t k = 0; k < SIZE; k += 2 * n) { //Completes every butterfly loop
+
+					for (size_t j = 0; j < n; j+=2) { //Completes each butterfly
+
+						evenIndex = k + j;
+						oddIndex = k + j + n;
+						
+						//odd = fbins[oddIndex];
+						//even = fbins[evenIndex];
+						//
+						//W = precomputes[j] * odd;
+						//
+						//fbins[evenIndex] = even + W;
+						//fbins[oddIndex] = even - W;
+
+						oddVector = _mm256_load_pd(reinterpret_cast<double*>(&fbins[oddIndex]));
+						evenVector = _mm256_load_pd(reinterpret_cast<double*>(&fbins[evenIndex]));
+						wVector = _mm256_load_pd(reinterpret_cast<double*>(&precomputes[j]));
+						
+						//Twiddle calc
+						//Real parts
+						oddVectorTimeW = _mm256_mul_pd(oddVector, wVector);
+						rout = _mm256_sub_pd(oddVectorTimeW, _mm256_permute_pd(oddVectorTimeW, 0b0101));
+						
+						//Imaginary part
+						swappedW = _mm256_permute_pd(wVector, 0b0101);
+						switchcrossProduct = _mm256_mul_pd(oddVector, swappedW);
+						doubleSwitchCrossProduct = _mm256_permute_pd(switchcrossProduct, 0b0101);
+						iout = _mm256_add_pd(switchcrossProduct, doubleSwitchCrossProduct);
+						
+						TwiddleFactor = _mm256_blend_pd(rout, iout, 0b1010);
+						
+						
+						PlusW = _mm256_add_pd(evenVector, TwiddleFactor);
+						MinusW = _mm256_sub_pd(evenVector, TwiddleFactor);
+						
+						_mm256_store_pd(reinterpret_cast<double*>(&fbins[evenIndex]), PlusW);
+						_mm256_store_pd(reinterpret_cast<double*>(&fbins[oddIndex]), MinusW);
+					}
+				}
+			}
+		}
+	}
+
 
 
 	/// <summary>

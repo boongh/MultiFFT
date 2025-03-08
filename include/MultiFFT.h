@@ -21,6 +21,8 @@ namespace MultiFFT {
 	void ThirdIttFFTRC(std::vector<std::complex<double>>& fbins);
 	FrequencyDomain FourthIttFTT(const Signal<double>& sample);
 	static void FourthITTFTTInternal(std::vector<std::complex<double>>& fbins);
+	FrequencyDomain FifthIttFFT(const Signal<double>& sample);
+	static void FifthFFTInternal(std::vector<std::complex<double>>& fbins);
 	std::vector<std::complex<double>> ConvertSignalToComplex(const std::vector<double>& input);
 	unsigned int RoundDownPowerOfTwo(unsigned int n);
 	inline constexpr unsigned int BitReverse(unsigned int b, unsigned int head);
