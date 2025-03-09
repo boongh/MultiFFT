@@ -3,15 +3,11 @@
 #include <math.h>
 #include <vector>
 #include <complex>
-#include <math.h>
+#include <chrono>
+#include <immintrin.h>
 #include "FrequencyDomain.h"
 
 namespace MultiFFT {
-
-	void PrintMessage(const std::string& str)
-	{
-		std::cout << str << std::endl;
-	}
 
 	FrequencyDomain Naive1DDFT(const Signal<double>& input) {
 		size_t N = input.data.size();
@@ -206,8 +202,6 @@ namespace MultiFFT {
 		size_t SIZE = fbins.size();
 
 		for (size_t n = 2; n < SIZE; n <<= 1) {
-
-			std::cout << "First layer " << n << "\n";
 			double inversen = 0.5 / n;
 			size_t stride = n;
 
@@ -233,6 +227,243 @@ namespace MultiFFT {
 			}
 		}
 	}
+
+
+
+
+	/// <summary>
+	/// Interface for FFT
+	/// Third itterationf FFT algorithm
+	/// Bit reversal permutation + one allocation
+	/// No recursion, NASA likes :)
+	/// </summary>
+	/// <param name="sample"></param>
+	/// <returns></returns>
+	/// 
+	FrequencyDomain FourthIttFTT(const Signal<double>& sample) {
+		int N = sample.data.size();
+
+		if (!IsPowerOfTwo(N)) throw std::invalid_argument("Size is not a power of 2");
+
+		unsigned int log2n = log2(N);
+
+		FrequencyDomain result(N);
+
+		//Reverse bit order of sample into freqdomain
+		for (size_t i = 0; i < N; ++i) {
+			size_t cousin = BitReverse(i, log2n);
+			if (i > cousin) {
+				result.fbins[cousin] = sample.data[i];
+				result.fbins[i] = sample.data[cousin];
+			}
+		}
+
+		FourthITTFTTInternal(result.fbins);
+
+		return result;
+	}
+
+	/// <summary>
+	/// Generate FFT/ Sub ffts
+	/// </summary>
+	/// <param name="sample">The bit reversed sample</param>
+	/// <param name="fbins"></param>
+	/// <param name="n"></param>
+	/// <param name="stride"></param>
+	static void FourthITTFTTInternal(std::vector<std::complex<double>>& fbins) {
+
+		size_t SIZE = fbins.size();
+        std::vector<std::complex<double>> precomputes(SIZE);
+
+		std::complex<double> odd;
+		std::complex<double> even;
+
+		std::complex<double> W;
+
+		size_t evenIndex;
+		size_t oddIndex;
+
+		double inversen;
+		size_t stride;
+
+
+		//First butterfly separate, second up can SIMD
+
+		inversen = 0.5 / 2;
+		stride = 2;
+		for (size_t k = 0; k < SIZE; k += 4) { //Completes every butterfly loop
+
+			for (size_t j = 0; j < stride; j++) { //Completes each butterfly
+
+				evenIndex = k + j;
+				oddIndex = k + j + stride;
+
+				odd = fbins[oddIndex];
+
+				fbins[evenIndex] = fbins[evenIndex] + odd;
+				fbins[oddIndex] = fbins[evenIndex] - odd;
+			}
+		}
+
+		if (SIZE > 2) {
+
+			for (size_t n = 4; n < SIZE; n <<= 1) {
+				inversen = 0.5 / n;
+				stride = n;
+
+				//Precomputes W
+				for (unsigned int wp = 0; wp < n; ++wp) {
+					precomputes[wp] = std::polar(1.0, -2.0 * PI * wp * inversen);
+				}
+
+				for (size_t k = 0; k < SIZE; k += 2 * n) { //Completes every butterfly loop
+
+					for (size_t j = 0; j < stride; j++) { //Completes each butterfly
+
+						evenIndex = k + j;
+						oddIndex = k + j + stride;
+
+						odd = fbins[oddIndex];
+						even = fbins[evenIndex];
+
+						W = precomputes[j] * odd;
+
+						fbins[evenIndex] = even + W;
+						fbins[oddIndex] = even - W;
+					}
+				}
+			}
+		}
+	}
+
+
+
+
+	/// <summary>
+	/// Interface for FFT
+	/// Fifth itterationf FFT algorithm
+	/// Bit reversal permutation + one allocation
+	/// No recursion, NASA likes :)
+	/// Vectorize
+	/// Precompute
+	/// </summary>
+	/// <param name="sample"></param>
+	/// <returns></returns>
+	/// 
+	FrequencyDomain FifthIttFFT(const Signal<double>& sample) {
+		int N = sample.data.size();
+
+		if (!IsPowerOfTwo(N)) throw std::invalid_argument("Size is not a power of 2");
+
+		unsigned int log2n = log2(N);
+
+		FrequencyDomain result(N);
+
+		//Reverse bit order of sample into freqdomain
+		for (size_t i = 0; i < N; ++i) {
+			size_t cousin = BitReverse(i, log2n);
+			if (i > cousin) {
+				result.fbins[cousin] = sample.data[i];
+				result.fbins[i] = sample.data[cousin];
+			}
+		}
+
+		FifthFFTInternal(result.fbins);
+
+		return result;
+	}
+
+	/// <summary>
+	/// Generate FFT/ Sub ffts
+	/// </summary>
+	/// <param name="sample">The bit reversed sample</param>
+	/// <param name="fbins"></param>
+	/// <param name="n"></param>
+	/// <param name="stride"></param>
+	static void FifthFFTInternal(std::vector<std::complex<double>>& fbins) {
+
+		size_t SIZE = fbins.size();
+		alignas(32) std::vector<std::complex<double>> precomputes(SIZE);
+
+		std::complex<double> odd;
+		std::complex<double> even;
+
+		std::complex<double> W;
+
+		size_t evenIndex;
+		size_t oddIndex;
+
+		double inversen;
+		size_t stride;
+
+		//SIMD stuff prep
+		__m256d oddVector;
+		__m256d evenVector;
+		__m256d wVector;
+		__m256d oddVectorTimeW;
+		__m256d rout;
+		__m256d switchcrossProduct;
+		__m256d iout;
+		__m256d TwiddleFactor;
+
+		//First butterfly separate, second up can SIMD
+
+		inversen = 0.5 / 2;
+		stride = 2;
+		for (size_t k = 0; k < SIZE; k += 4) { //Completes every butterfly loop
+
+			for (size_t j = 0; j < stride; j++) { //Completes each butterfly
+
+				evenIndex = k + j;
+				oddIndex = k + j + stride;
+
+				odd = fbins[oddIndex];
+
+				fbins[evenIndex] = fbins[evenIndex] + odd;
+				fbins[oddIndex] = fbins[evenIndex] - odd;
+			}
+		}
+
+		if (SIZE >= 2) {
+			for (size_t n = 4; n < SIZE; n <<= 1) {
+				inversen = 0.5 / n;
+
+				//Precomputes W
+				for (unsigned int wp = 0; wp < n; ++wp) {
+					precomputes[wp] = std::polar(1.0, -2.0 * PI * wp * inversen);
+				}
+
+				for (size_t k = 0; k < SIZE; k += 2 * n) { //Completes every butterfly loop
+
+					for (size_t j = 0; j < n; j+=2) { //Completes each butterfly
+
+						evenIndex = k + j;
+						oddIndex = k + j + n;
+					
+
+						oddVector = _mm256_load_pd(reinterpret_cast<double*>(&fbins[oddIndex]));
+						evenVector = _mm256_load_pd(reinterpret_cast<double*>(&fbins[evenIndex]));
+						wVector = _mm256_load_pd(reinterpret_cast<double*>(&precomputes[j]));
+						
+						//Twiddle calc
+						//Real parts
+						oddVectorTimeW = _mm256_mul_pd(oddVector, wVector);
+						rout = _mm256_sub_pd(oddVectorTimeW, _mm256_permute_pd(oddVectorTimeW, 0b0101));
+						
+						//Imaginary part
+						switchcrossProduct = _mm256_mul_pd(oddVector, _mm256_permute_pd(wVector, 0b0101));
+						iout = _mm256_add_pd(switchcrossProduct, _mm256_permute_pd(switchcrossProduct, 0b0101));
+						
+						TwiddleFactor = _mm256_blend_pd(rout, iout, 0b1010);
+						
+						_mm256_store_pd(reinterpret_cast<double*>(&fbins[evenIndex]), _mm256_add_pd(evenVector, TwiddleFactor));
+						_mm256_store_pd(reinterpret_cast<double*>(&fbins[oddIndex]), _mm256_sub_pd(evenVector, TwiddleFactor));
+					}
+				}
+			}
+		}
+	}
+
 
 
 	/// <summary>
@@ -279,6 +510,8 @@ namespace MultiFFT {
 		return windowedSignal;
 	}
 
+
+
 	bool IsPowerOfTwo(int x)
 	{
 		return (x != 0) && ((x & (x - 1)) == 0);
@@ -292,5 +525,10 @@ namespace MultiFFT {
 	bool IsPowerOfTwo(unsigned long x)
 	{
 		return (x != 0) && ((x & (x - 1)) == 0);
+	}
+
+	void PrintMessage(const std::string& str)
+	{
+		std::cout << str << std::endl;
 	}
 }

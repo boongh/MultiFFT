@@ -55,16 +55,66 @@ public:
 	/// <param name="signal"></param>
 	/// <param name="targetChannel"></param>
 	/// <returns></returns>
-	static Signal<T>* UpChannel(const Signal& signal1, const Signal& signal2) {
+	static Signal<T> UpChannelCombine(const Signal& signal1, const Signal& signal2) {
 		if (signal1.sampleRate != signal2.sampleRate) {
 			std::cerr << "Sample rate is not coherent, unable to combine channels" << "\n";
-			throw std::invalid_argument("Signal Incoherent in Signal Upchannel");
+			throw std::invalid_argument("Sample rate  Incoherent in Signal Upchannel");
 		}
-		int maxLength = std::max(signal1.data.size(), signal2.data.size());
+		// Calculate the number of samples per channel for each signal
+		int samples1 = signal1.data.size() / signal1.channel;
+		int samples2 = signal2.data.size() / signal2.channel;
+
+		int maxLength = std::max(signal1.data.size() / signal1.channel, signal2.data.size()/ signal2.channel);
 		int numChannelsOut = signal1.channel + signal2.channel;
 
-		Signal<T> result = Signal<T>(maxLength * numChannelsOut, signal1.sampleRate, numChannelsOut);
+		Signal<T> result = Signal<T>(maxLength, signal1.sampleRate, numChannelsOut);
+
+		// For each sample, copy available channels from signal1 and signal2 into the result.
+		for (int i = 0; i < maxLength; i++) {
+			int resultBase = i * numChannelsOut;
+			// For signal1 channels
+			for (int j = 0; j < signal1.channel; j++) {
+				// If signal1 has this sample, copy it; otherwise, fill with zero.
+				if (i < samples1)
+					result.data[resultBase + j] = signal1.data[i * signal1.channel + j];
+				else
+					result.data[resultBase + j] = static_cast<T>(0);
+			}
+
+			// For signal2 channels
+			for (int j = 0; j < signal2.channel; j++) {
+				if (i < samples2)
+					//Offset after signal 1
+					result.data[resultBase + signal1.channel + j] = signal2.data[i * signal2.channel + j];
+				else
+					result.data[resultBase + signal1.channel + j] = static_cast<T>(0);
+			}
+		}
+
+		return result;
 	}
+
+
+	/// <summary>
+	/// Split up all the channels a single signal into their own signals
+	/// </summary>
+	/// <param name="signalin"></param>
+	/// <returns>vector of signals</returns>
+    static std::vector<Signal<T>> SplitChannels(const Signal& signalin) {
+		int channels = signalin.channel;
+		int newSize = signalin.data.size() / channels;
+
+		std::vector<Signal<T>> results(channels, Signal<T>(newSize, signalin.sampleRate, 1));
+
+		for (int c = 0; c < channels; c++) {
+			for (int j = 0; j < newSize; ++j) {
+				results[c].data[j] = signalin.data[j * channels + c];
+			}
+		}
+
+		return results;
+    }
+
 
 
 	//Combining signal a and b with b shifted forward in time by timeShift seconds
@@ -77,9 +127,6 @@ public:
 		int sampleratemax = std::max(base.sampleRate, b.sampleRate);
 		int maxChannel = std::max(base.channel, b.channel);
 
-
-
-
 		int timeshiftSR = sampleratemax * timeShift;
 
 		size_t baseSize = base.data.size() * sampleratemax / base.sampleRate;
@@ -89,6 +136,10 @@ public:
 
 		
 		std::size_t shift = (static_cast<size_t>(result.sampleRate) / b.sampleRate);
+
+		for (size_t i = 0; i < base.data.size(); i++) {
+			result.data[i] += base.data[i] * (1 - factor);
+		}
 
 		for (size_t i = 0; i < b.data.size(); i++) {
 			result.data[i * shift + timeshiftSR] += b.data[i] * factor;
@@ -113,22 +164,39 @@ public:
 		return (result.data.empty()) ? Signal<T>() : result;
 	}
 
-	static Signal<T> ConvertPCMToSignal(Signal<uint16_t> signalIn) {
+
+	/// <summary>
+	/// Convert Signed PCM Signal to normalized signal format
+	/// </summary>
+	/// <param name="signalIn"></param>
+	/// <returns>New normalized signal</returns>
+	static Signal<T> ConvertSignedPCMToSignal(const Signal<int16_t>& signalIn) {
 		Signal<T> dataOut = Signal<T>(static_cast<int>(signalIn.data.size()), signalIn.sampleRate, signalIn.channel);
 
 		for (int i = 0; i < signalIn.data.size(); i++) {
-			dataOut.data[i] = static_cast<T>(signalIn.data[i]);
+			dataOut.data[i] = static_cast<T>(signalIn.data[i]) / 32768; // Signal deals with assumption that signal is normalised and signed
 		}
 		return (dataOut.data.empty()) ? Signal<T>() : dataOut;
 	}
 
-	static Signal<uint16_t> ConvertSignalToPCM(Signal<T> signalIn) {
 
-		Signal<uint16_t> dataOut = Signal<uint16_t>(static_cast<int>(signalIn.data.size()), signalIn.sampleRate, signalIn.channel);
+	/// <summary>
+	/// Convert signed normalized Signal format into signed PCM
+	/// </summary>
+	/// <param name="signalIn"></param>
+	/// <returns>New scaled PCM signal</returns>
+	static Signal<int16_t> ConvertSignalToPCM(const Signal<T>& signalIn) {
+
+		std::cout << signalIn.sampleRate << "\n";
+		std::cout << signalIn.data.size() << "\n";
+		std::cout << signalIn.channel << "\n";
+
+		Signal<int16_t> dataOut = Signal<int16_t>(static_cast<int>(signalIn.data.size()), signalIn.sampleRate, signalIn.channel);
 
 		for (int i = 0; i < signalIn.data.size(); i++) {
-			dataOut.data[i] = static_cast<uint16_t>((signalIn.data[i] + 1) * UINT16_MAX);
+			dataOut.data[i] = static_cast<uint16_t>(signalIn.data[i] * (-INT16_MIN));
 		}
-		return (dataOut.data.empty()) ? Signal<uint16_t>() : dataOut;
+		return (dataOut.data.empty()) ? Signal<int16_t>() : dataOut;
 	}
+
 };
