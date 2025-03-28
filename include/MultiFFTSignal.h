@@ -48,52 +48,6 @@ public:
 		}
 	}
 
-	/// <summary>
-	/// Combine both signals into different channel
-	/// File must have same sample rate
-	/// </summary>
-	/// <param name="signal"></param>
-	/// <param name="targetChannel"></param>
-	/// <returns></returns>
-	static Signal<T> UpChannelCombine(const Signal& signal1, const Signal& signal2) {
-		if (signal1.sampleRate != signal2.sampleRate) {
-			std::cerr << "Sample rate is not coherent, unable to combine channels" << "\n";
-			throw std::invalid_argument("Sample rate  Incoherent in Signal Upchannel");
-		}
-		// Calculate the number of samples per channel for each signal
-		int samples1 = signal1.data.size() / signal1.channel;
-		int samples2 = signal2.data.size() / signal2.channel;
-
-		int maxLength = std::max(samples1, samples2);
-		int numChannelsOut = signal1.channel + signal2.channel;
-
-		Signal<T> result = Signal<T>(maxLength, signal1.sampleRate, numChannelsOut);
-
-		// For each sample, copy available channels from signal1 and signal2 into the result.
-		for (int i = 0; i < maxLength; i++) {
-			int resultBase = i * numChannelsOut;
-			// For signal1 channels
-			for (int j = 0; j < signal1.channel; j++) {
-				// If signal1 has this sample, copy it; otherwise, fill with zero.
-				if (i < samples1)
-					result.data[resultBase + j] = signal1.data[i * signal1.channel + j];
-				else
-					result.data[resultBase + j] = static_cast<T>(0);
-			}
-
-			// For signal2 channels
-			for (int j = 0; j < signal2.channel; j++) {
-				if (i < samples2)
-					//Offset after signal 1
-					result.data[resultBase + signal1.channel + j] = signal2.data[i * signal2.channel + j];
-				else
-					result.data[resultBase + signal1.channel + j] = static_cast<T>(0);
-			}
-		}
-
-		return result;
-	}
-
 
 	/// <summary>
 	/// Split up all the channels a single signal into their own signals
@@ -112,12 +66,12 @@ public:
 			}
 		}
 
-		std::cout << "Split channel" << "\n";
+		/*std::cout << "Split channel" << "\n";
 		std::cout << "Signal 1 : " << signalin.data.size() << "\n";
 		std::cout << "Datapoint : " << results[0].data.size() << "\n";
 		std::cout << "Size of a point : " << sizeof(results[0].data[0]) << "\n";
 		std::cout << "Sample rate : " << results[0].sampleRate << "\n";
-		std::cout << "Channels : " << results[0].channel << "\n";
+		std::cout << "Channels : " << results[0].channel << "\n";*/
 
 
 		return results;
@@ -125,8 +79,16 @@ public:
 
 
 
-	//Combining signal a and b with b shifted forward in time by timeShift seconds
-	//If samepleRate is not the same, the signal with the higher sample rate will be used
+	/// <summary>
+	/// Combining signal a and b with b shifted forward in time by timeShift seconds
+	/// Sample rate must be coherent, implicit interpolation is not supported
+	/// Can be different channels, different channels will be merged into their own channels individually
+	/// </summary>
+	/// <param name="base">Base signal</param>
+	/// <param name="b">Second signal</param>
+	/// <param name="timeShift">Shift in time of second signal forward</param>
+	/// <param name="factor">Factor the second signal will be scaled by</param>
+	/// <returns>New signal with both combined</returns>
 	static Signal<T> CombineSignal(const Signal& base, const Signal& b, double timeShift, double factor) {
 		if (base.sampleRate != b.sampleRate) {
 			throw std::invalid_argument("Sample rate or channel not coherent");
@@ -171,6 +133,52 @@ public:
 		return result;
 	}
 
+	/// <summary>
+	/// Combine both signals into different channel
+	/// File must have same sample rate
+	/// </summary>
+	/// <param name="signal"></param>
+	/// <param name="targetChannel"></param>
+	/// <returns>New Signal of both combined into different channels</returns>
+	static Signal<T> UpChannelCombine(const Signal& signal1, const Signal& signal2) {
+		if (signal1.sampleRate != signal2.sampleRate) {
+			std::cerr << "Sample rate is not coherent, unable to combine channels" << "\n";
+			throw std::invalid_argument("Sample rate  Incoherent in Signal Upchannel");
+		}
+		// Calculate the number of samples per channel for each signal
+		int samples1 = signal1.data.size() / signal1.channel;
+		int samples2 = signal2.data.size() / signal2.channel;
+
+		int maxLength = std::max(samples1, samples2);
+		int numChannelsOut = signal1.channel + signal2.channel;
+
+		Signal<T> result = Signal<T>(maxLength, signal1.sampleRate, numChannelsOut);
+
+		// For each sample, copy available channels from signal1 and signal2 into the result.
+		for (int i = 0; i < maxLength; i++) {
+			int resultBase = i * numChannelsOut;
+			// For signal1 channels
+			for (int j = 0; j < signal1.channel; j++) {
+				// If signal1 has this sample, copy it; otherwise, fill with zero.
+				if (i < samples1)
+					result.data[resultBase + j] = signal1.data[i * signal1.channel + j];
+				else
+					result.data[resultBase + j] = static_cast<T>(0);
+			}
+
+			// For signal2 channels
+			for (int j = 0; j < signal2.channel; j++) {
+				if (i < samples2)
+					//Offset after signal 1
+					result.data[resultBase + signal1.channel + j] = signal2.data[i * signal2.channel + j];
+				else
+					result.data[resultBase + signal1.channel + j] = static_cast<T>(0);
+			}
+		}
+
+		return result;
+	}
+
 	static Signal<T> GenerateSineWave(size_t size, int frequency, int sampleRate, double amplitudeNormalized = 1) {
 
 		std::vector<double> sinLookupTable;
@@ -197,7 +205,7 @@ public:
 		size_t sample = signalIn.data.size() / signalIn.channel;
 		Signal<T> dataOut = Signal<T>(sample, signalIn.sampleRate, signalIn.channel);
 
-		for (int i = 0; i < sample; i++) {
+		for (int i = 0; i < signalIn.data.size(); i++) {
 			dataOut.data[i] = static_cast<T>(signalIn.data[i]) / 32768; // Signal deals with assumption that signal is normalised and signed
 		}
 		return (dataOut.data.empty()) ? Signal<T>() : dataOut;

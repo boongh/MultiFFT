@@ -13,7 +13,7 @@ public:
 	size_t sampleRate;
 
 	FrequencyDomain(size_t bins) {
-		fbins = std::vector<std::complex<double>>(bins);
+ 		fbins = std::vector<std::complex<double>>(bins);
 		sampleRate = 0;
 	}
 };

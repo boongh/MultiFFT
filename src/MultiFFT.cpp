@@ -9,6 +9,8 @@
 
 namespace MultiFFT {
 
+
+
 	FrequencyDomain Naive1DDFT(const Signal<double>& input) {
 		size_t N = input.data.size();
 		size_t halfN = N / 2;
@@ -464,6 +466,182 @@ namespace MultiFFT {
 		}
 	}
 
+
+
+	/// <summary>
+	/// Interface for FFT
+	/// Fifth itterationf FFT algorithm
+	/// Bit reversal permutation + one allocation
+	/// Pad with zeroes to support data size
+	/// No recursion, NASA likes :)
+	/// Vectorize AVX2
+	/// Precompute
+	/// </summary>
+	/// <param name="sample"></param>
+	/// <returns></returns>
+	FrequencyDomain SixthIttFFT(const Signal<double>& sample) {
+		int N = sample.data.size();
+		int nextPower2 = ceil(log2(N));	
+
+		FrequencyDomain result(1 << nextPower2);
+		result.sampleRate = sample.sampleRate;
+
+        #include <chrono>
+
+        //Reverse bit order of sample into freqdomain
+        auto start = std::chrono::high_resolution_clock::now();
+
+        for (unsigned int i = 0; i < N; ++i) {
+            size_t cousin = BitReverse(i, nextPower2);
+            result.fbins[cousin] = sample.data[i];
+        }
+
+        auto end = std::chrono::high_resolution_clock::now();
+		auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+		std::cout << "Bit Permute duration: " << elapsed.count() << " microseconds" << std::endl;
+
+		SixthFFTInternal(result.fbins);
+
+		return result;
+	}
+
+	/// <summary>
+	/// Generate FFT/ Sub ffts
+	/// </summary>
+	/// <param name="sample">The bit reversed sample</param>
+	/// <param name="fbins"></param>
+	/// <param name="n"></param>
+	/// <param name="stride"></param>
+	static void SixthFFTInternal(std::vector<std::complex<double>>& fbins) {
+
+		size_t SIZE = fbins.size();
+		alignas(32) std::vector<std::complex<double>> precomputes(SIZE);
+
+		std::complex<double> odd;
+		std::complex<double> even;
+
+		std::complex<double> W;
+
+		size_t evenIndex;
+		size_t oddIndex;
+
+		double inversen;
+		size_t stride;
+
+		//SIMD stuff prep
+		__m256d oddVector;
+		__m256d evenVector;
+		__m256d wVector;
+		__m256d oddVectorTimeW;
+		__m256d rout;
+		__m256d switchcrossProduct;
+		__m256d iout;
+		__m256d TwiddleFactor;
+
+		//First butterfly separate, second up can SIMD
+
+		inversen = 0.5 / 2;
+		stride = 2;
+
+		//Profiler varaiable
+		int layer = 0;
+		int butterflySize = 0;
+
+		auto start = std::chrono::high_resolution_clock::now();
+
+		for (size_t k = 0; k < SIZE; k += 4) { //Completes every butterfly loop
+
+			for (size_t j = 0; j < stride; j++) { //Completes each butterfly
+
+				evenIndex = k + j;
+				oddIndex = k + j + stride;
+
+				odd = fbins[oddIndex];
+
+				fbins[evenIndex] = fbins[evenIndex] + odd;
+				fbins[oddIndex] = fbins[evenIndex] - odd;
+			}
+		}
+
+
+		auto end = std::chrono::high_resolution_clock::now();
+		auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+		std::cout << layer++ << "th layer duration: " << elapsed.count() << " microseconds" << std::endl;
+
+		if (SIZE >= 2) {
+			for (size_t n = 4; n < SIZE; n <<= 1) {
+				inversen = 0.5 / n;
+
+				start = std::chrono::high_resolution_clock::now();
+
+
+				//Precomputes W
+				for (unsigned int wp = 0; wp < n; ++wp) {
+					precomputes[wp] = std::polar(1.0, -2.0 * PI * wp * inversen);
+				}
+
+				for (size_t k = 0; k < SIZE; k += 2 * n) { //Completes every butterfly loop
+
+					for (size_t j = 0; j < n; j += 2) { //Completes each butterfly
+
+						evenIndex = k + j;
+						oddIndex = k + j + n;
+
+
+						oddVector = _mm256_load_pd(reinterpret_cast<double*>(&fbins[oddIndex]));
+						evenVector = _mm256_load_pd(reinterpret_cast<double*>(&fbins[evenIndex]));
+						wVector = _mm256_load_pd(reinterpret_cast<double*>(&precomputes[j]));
+
+						//Twiddle calc
+						//Real parts
+						oddVectorTimeW = _mm256_mul_pd(oddVector, wVector);
+						rout = _mm256_sub_pd(oddVectorTimeW, _mm256_permute_pd(oddVectorTimeW, 0b0101));
+
+						//Imaginary part
+						switchcrossProduct = _mm256_mul_pd(oddVector, _mm256_permute_pd(wVector, 0b0101));
+						iout = _mm256_add_pd(switchcrossProduct, _mm256_permute_pd(switchcrossProduct, 0b0101));
+
+						TwiddleFactor = _mm256_blend_pd(rout, iout, 0b1010);
+
+						_mm256_store_pd(reinterpret_cast<double*>(&fbins[evenIndex]), _mm256_add_pd(evenVector, TwiddleFactor));
+						_mm256_store_pd(reinterpret_cast<double*>(&fbins[oddIndex]), _mm256_sub_pd(evenVector, TwiddleFactor));
+					}
+				}
+
+				end = std::chrono::high_resolution_clock::now();
+				elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+				std::cout << layer++ << "th layer duration: " << elapsed.count() << " microseconds" << std::endl;
+			}
+		}
+	}
+
+
+	Signal<std::complex<double>> InverseFFT(FrequencyDomain FD) {
+
+		int N = FD.fbins.size();
+
+		if (!IsPowerOfTwo(N)) { return Signal<std::complex<double>>(); };
+
+
+		int nextPower2 = log2(N);
+
+		Signal<std::complex<double>>result(N, FD.sampleRate, 1);
+
+		//Reverse bit order of sample into freqdomain
+		//Conjugate to negate the exponent
+		for (int i = 0; i < N; ++i) {
+			size_t cousin = BitReverse(i, nextPower2);
+			result.data[cousin] = std::conj(FD.fbins[i]);
+		}
+
+		SixthFFTInternal(result.data);
+
+		for (int i = 0; i < N; ++i) {
+			result.data[i] = std::conj(result.data[i]);
+		}
+
+		return result;
+	}
 
 
 	/// <summary>
